@@ -1,0 +1,687 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tumour Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,500;0,600;1,500&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: clinical reading room. Patient list rail, study workspace, 3D map with a 3-plane MRI stack, report column. Dark by choice: radiology is read on dark ground. */
+:root {
+  --bg: #0b0f12; --panel: #12181c; --panel-2: #182026; --line: #24303a; --fg: #e6e4df; --muted: #8e9a9f;
+  --accent: #e8a68a; --accent-ink: #1d0f09;
+  --ed: #e9c46a; --ncr: #d1495b; --et: #4fc3e0;
+  --ok: #7cc49a; --warn: #e9c46a; --crit: #e0675f;
+  --f-display: "Spectral", Georgia, serif; --f-body: "Public Sans", "Segoe UI", system-ui, sans-serif; --f-mono: "JetBrains Mono", Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 13px; line-height: 1.45; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+[hidden] { display: none !important; }
+.btn { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.btn.primary:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn.small { padding: 4px 9px; font-size: 12px; }
+input.f, select.f, textarea.f { width: 100%; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+label.l { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; letter-spacing: 0.04em; }
+.eyebrow { font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+h1, h2, h3 { margin: 0; }
+.mono { font-family: var(--f-mono); }
+.muted { color: var(--muted); }
+.err { color: var(--crit); font-size: 12px; min-height: 1em; }
+
+/* login */
+#login { height: 100%; display: grid; place-items: center; padding: 16px; background: radial-gradient(ellipse at 50% 30%, #1b232a, #0b0f12 70%); }
+.login-card { width: min(380px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 28px; display: flex; flex-direction: column; gap: 14px; }
+.brand { font-family: var(--f-display); font-size: 22px; font-weight: 600; white-space: nowrap; }
+.brand em { color: var(--accent); font-weight: 500; }
+.login-card .sep { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 11px; }
+.login-card .sep::before, .login-card .sep::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+/* app shell */
+#app { height: 100%; display: grid; grid-template-columns: 260px minmax(0, 1fr); grid-template-rows: 48px minmax(0, 1fr); grid-template-areas: "top top" "side main"; }
+header.top { grid-area: top; display: flex; align-items: center; gap: 14px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+header .crumbs { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+header .crumbs b { color: var(--fg); font-weight: 500; }
+header .grow { flex: 1; }
+header .who { font-size: 12px; color: var(--muted); white-space: nowrap; }
+@media (max-width: 900px) { header .who { display: none; } }
+aside.side { grid-area: side; border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+.side-head { padding: 12px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--line); }
+.plist { flex: 1; overflow-y: auto; padding: 6px; }
+.pitem { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; padding: 9px 10px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
+.pitem:hover { background: var(--panel-2); }
+.pitem.on { background: var(--panel-2); border-color: var(--line); }
+.pitem .nm { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pitem .sub { grid-column: 1 / -1; font-family: var(--f-mono); font-size: 10.5px; color: var(--muted); }
+main { grid-area: main; min-width: 0; min-height: 0; overflow: auto; }
+
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.chip.ok { color: var(--ok); } .chip.warn { color: var(--warn); } .chip.crit { color: var(--crit); } .chip.run { color: var(--accent); } .chip.idle { color: var(--muted); }
+.chip.run::before { animation: pulse 1s infinite alternate; }
+@keyframes pulse { from { opacity: 0.3; } to { opacity: 1; } }
+
+/* patient page */
+.page { padding: 22px 24px 40px; display: flex; flex-direction: column; gap: 22px; max-width: 1100px; }
+.phead h1 { font-family: var(--f-display); font-size: 28px; font-weight: 600; }
+.phead .meta { display: flex; flex-wrap: wrap; gap: 4px 16px; font-family: var(--f-mono); font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+.phead p { margin: 8px 0 0; color: var(--muted); max-width: 70ch; }
+.sec-t { font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 600; margin-bottom: 10px; }
+.studies { display: flex; flex-direction: column; gap: 8px; }
+.scard { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+.scard .t { font-weight: 500; }
+.scard .d { font-size: 12px; color: var(--muted); }
+.scard .stats { display: flex; gap: 14px; font-family: var(--f-mono); font-size: 11.5px; flex-wrap: wrap; }
+.upload { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.drop { border: 1.5px dashed var(--line); border-radius: 8px; padding: 18px; text-align: center; color: var(--muted); cursor: pointer; }
+.drop.over { border-color: var(--accent); color: var(--fg); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.slots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.slot { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; min-width: 0; }
+.slot b { display: block; font-size: 12px; }
+.slot span { font-family: var(--f-mono); font-size: 10.5px; color: var(--muted); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot.filled { border-color: color-mix(in srgb, var(--ok) 60%, var(--line)); }
+.slot.filled span { color: var(--ok); }
+.row { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
+.row > div { flex: 1; min-width: 180px; }
+.hint { font-size: 11.5px; color: var(--muted); margin: 0; max-width: 80ch; }
+.steps { display: flex; gap: 6px; flex-wrap: wrap; font-size: 11px; font-family: var(--f-mono); color: var(--muted); }
+.steps span.on { color: var(--accent); }
+.steps span.done { color: var(--ok); }
+
+/* study viewer */
+.viewer { height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 370px; min-height: 0; }
+.stage { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); grid-template-rows: auto repeat(3, minmax(0, 1fr)); gap: 6px; padding: 6px; min-height: 0; min-width: 0; }
+.toolbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 2px 4px; }
+.seg { display: inline-grid; grid-auto-flow: column; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { background: transparent; border: 0; border-left: 1px solid var(--line); padding: 5px 10px; cursor: pointer; font-size: 12px; color: var(--muted); }
+.seg button:first-child { border-left: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; }
+.check input { accent-color: var(--accent); margin: 0; }
+.view3d { grid-row: 2 / span 3; position: relative; border-radius: 8px; overflow: hidden; background: radial-gradient(ellipse at 50% 40%, #1b232a, #0b0f12 75%); border: 1px solid var(--line); min-height: 0; }
+.view3d canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.layers { position: absolute; left: 10px; top: 10px; background: rgba(12, 16, 19, 0.88); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.layers h4 { margin: 0 0 2px; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.layers .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.mapbtns { position: absolute; right: 10px; bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
+.mapbtns button { width: 34px; height: 34px; background: rgba(12, 16, 19, 0.88); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 16px; }
+.mapbtns button:hover { border-color: var(--accent); }
+.locate { position: absolute; right: 10px; top: 10px; }
+.slice { position: relative; border-radius: 8px; overflow: hidden; background: #000; border: 1px solid var(--line); min-height: 0; }
+.slice canvas { width: 100%; height: 100%; object-fit: contain; display: block; transform: scaleX(-1); image-rendering: auto; cursor: crosshair; }
+.slice .tag { position: absolute; left: 8px; top: 6px; font-family: var(--f-mono); font-size: 10.5px; color: var(--muted); pointer-events: none; }
+.slice .o { position: absolute; font-family: var(--f-mono); font-size: 10.5px; color: #c9c4b8; pointer-events: none; }
+.slice .o.l { left: 6px; top: 50%; transform: translateY(-50%); } .slice .o.r { right: 6px; top: 50%; transform: translateY(-50%); }
+.slice .o.t { top: 6px; left: 50%; transform: translateX(-50%); } .slice .o.b { bottom: 6px; left: 50%; transform: translateX(-50%); }
+.readout { position: absolute; left: 10px; bottom: 10px; font-family: var(--f-mono); font-size: 11px; color: var(--muted); background: rgba(12, 16, 19, 0.8); padding: 4px 8px; border-radius: 5px; pointer-events: none; max-width: calc(100% - 70px); }
+.readout b { color: var(--fg); font-weight: 500; }
+
+.report { border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding: 16px 18px 30px; display: flex; flex-direction: column; gap: 18px; min-height: 0; }
+.report > * { flex-shrink: 0; }
+.report h2 { font-family: var(--f-display); font-size: 23px; font-weight: 600; line-height: 1.15; text-wrap: balance; }
+.kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.kpis div { background: var(--panel-2); padding: 8px 10px; }
+.kpis dt { font-size: 10px; color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
+.kpis dd { margin: 2px 0 0; font-family: var(--f-mono); font-size: 15px; font-variant-numeric: tabular-nums; }
+.kpis dd small { font-size: 10.5px; color: var(--muted); }
+.kpis .sw { width: 8px; height: 8px; border-radius: 2px; }
+.stack { display: flex; height: 10px; border-radius: 3px; overflow: hidden; }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--muted); margin-top: 6px; font-family: var(--f-mono); }
+.blk h4 { margin: 0 0 8px; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.bars { display: flex; flex-direction: column; gap: 5px; }
+.bar { display: grid; grid-template-columns: minmax(0, 1fr) 48px; gap: 8px; align-items: center; font-size: 12px; }
+.bar .lb { position: relative; padding: 3px 6px; border-radius: 3px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.bar .lb i { position: absolute; inset: 0 auto 0 0; background: var(--panel-2); border-right: 2px solid var(--accent); }
+.bar .lb span { position: relative; }
+.bar .v { font-family: var(--f-mono); font-size: 11px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.prox { display: flex; flex-direction: column; gap: 4px; }
+.prox div { display: grid; grid-template-columns: minmax(0, 1fr) auto 70px; gap: 8px; align-items: center; font-size: 12px; }
+.prox .mm { font-family: var(--f-mono); font-size: 11px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.note { font-size: 11.5px; color: var(--muted); border-left: 2px solid var(--line); padding-left: 10px; margin: 0; }
+.dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; font-size: 12px; margin: 0; }
+.dl dt { color: var(--muted); } .dl dd { margin: 0; font-family: var(--f-mono); font-size: 11.5px; }
+.loading { display: grid; place-items: center; height: 100%; color: var(--muted); font-family: var(--f-mono); font-size: 12px; }
+.toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 14px; font-size: 12px; z-index: 50; transition: opacity 0.3s; }
+dialog { background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 10px; padding: 20px; width: min(420px, calc(100% - 32px)); }
+dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+dialog form { display: flex; flex-direction: column; gap: 12px; }
+@media (max-width: 1200px) { .viewer { grid-template-columns: minmax(0, 1fr); } .report { border-left: 0; border-top: 1px solid var(--line); } .viewer { height: auto; } .stage { height: 82vh; } }
+@media (max-width: 760px) {
+  #app { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "main"; }
+  aside.side { display: none; } #app.showside aside.side { display: flex; position: fixed; inset: 48px 0 0 0; z-index: 30; }
+  .slots { grid-template-columns: 1fr 1fr; }
+  .stage { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 50vh repeat(3, 40vh); height: auto; }
+  .view3d { grid-row: auto; }
+  .page { padding: 16px; }
+}
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+
+<section id="login" hidden>
+  <form class="login-card" id="loginForm">
+    <div class="brand">Tumour <em>Map</em></div>
+    <p class="muted" style="margin:0">Brain MRI tumour segmentation and localisation for clinicians.</p>
+    <div><label class="l" for="email">Email</label><input class="f" id="email" type="email" autocomplete="username" required></div>
+    <div><label class="l" for="password">Password</label><input class="f" id="password" type="password" autocomplete="current-password" required></div>
+    <div class="err" id="loginErr"></div>
+    <button class="btn primary" type="submit">Sign in</button>
+    <div class="sep">or</div>
+    <button class="btn" type="button" id="demoBtn">Continue with the demo account</button>
+    <p class="hint">Runs on this computer. Scans and results are stored in the local <span class="mono">data</span> folder and never leave the machine.</p>
+  </form>
+</section>
+
+<div id="app" hidden>
+  <header class="top">
+    <button class="btn small" id="menuBtn" style="display:none" aria-label="Patients">☰</button>
+    <div class="brand" style="font-size:18px">Tumour <em>Map</em></div>
+    <div class="crumbs" id="crumbs"></div>
+    <div class="grow"></div>
+    <span class="who" id="who"></span>
+    <button class="btn small" id="logoutBtn">Sign out</button>
+  </header>
+  <aside class="side">
+    <div class="side-head">
+      <button class="btn primary" id="newPatientBtn">New patient</button>
+      <input class="f" id="psearch" type="search" placeholder="Search patients" aria-label="Search patients">
+    </div>
+    <div class="plist" id="plist"></div>
+  </aside>
+  <main id="main"></main>
+</div>
+
+<dialog id="pdlg">
+  <form id="pform" method="dialog">
+    <h3 style="font-family:var(--f-display);font-size:20px">New patient</h3>
+    <div><label class="l" for="pname">Name</label><input class="f" id="pname" required></div>
+    <div class="row">
+      <div><label class="l" for="pmrn">Hospital ID / MRN</label><input class="f" id="pmrn"></div>
+      <div style="min-width:90px;flex:0 0 90px"><label class="l" for="page">Age</label><input class="f" id="page" type="number" min="0" max="120"></div>
+      <div style="min-width:110px;flex:0 0 110px"><label class="l" for="psex">Sex</label><select class="f" id="psex"><option value="">–</option><option>F</option><option>M</option><option>Other</option></select></div>
+    </div>
+    <div><label class="l" for="pnotes">Clinical notes</label><textarea class="f" id="pnotes" rows="3"></textarea></div>
+    <div class="err" id="perr"></div>
+    <div class="row" style="justify-content:flex-end"><button class="btn" type="button" id="pcancel">Cancel</button><button class="btn primary" type="submit">Add patient</button></div>
+  </form>
+</dialog>
+<div class="toast" id="toast" style="opacity:0"></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[m]);
+const fmt = (x, d = 1) => (x ?? 0).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+const SEQ_LABEL = { t1: "T1", t1ce: "T1 + contrast", t2: "T2", flair: "FLAIR" };
+const REGION = { 2: { name: "Peritumoral oedema", key: "oedema", rgb: [233, 196, 106] }, 1: { name: "Necrotic / non-enhancing core", key: "necrotic", rgb: [209, 73, 91] }, 4: { name: "Enhancing tumour", key: "enhancing", rgb: [79, 195, 224] } };
+
+// The online demo is a static build (tools/build_static.py) with pre-processed cases and no server.
+const STATIC = !!document.querySelector('meta[name="tm-static"]');
+const DEMO_USER = { email: "doctor@tumourmap.local", name: "Dr. Demo" };
+async function gunzipIfNeeded(buf) {
+  const h = new Uint8Array(buf, 0, 2);
+  return h[0] === 0x1f && h[1] === 0x8b ? new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer() : buf;
+}
+async function staticApi(path, opts) {
+  const method = opts.method || "GET";
+  const signedIn = () => { try { return sessionStorage.getItem("tm_demo") === "1"; } catch { return true; } };
+  if (path === "/api/login/demo") { try { sessionStorage.setItem("tm_demo", "1"); } catch {} return DEMO_USER; }
+  if (path === "/api/login") throw new Error("This online demo has one account. Use “Continue with the demo account”.");
+  if (path === "/api/logout") { try { sessionStorage.removeItem("tm_demo"); } catch {} return { ok: true }; }
+  if (!signedIn()) { showLogin(); throw new Error("Signed out"); }
+  if (method !== "GET") throw new Error("The online demo is read-only. Run Tumour Map locally to add patients and upload scans.");
+  if (path === "/api/me") return DEMO_USER;
+  if (path === "/api/samples") return [];
+  const get = async (url, bin) => { const r = await fetch(url); if (!r.ok) throw new Error(`Could not load ${url} (HTTP ${r.status}).`); return bin ? gunzipIfNeeded(await r.arrayBuffer()) : r.json(); };
+  if (path === "/api/patients") return get("demo/patients.json");
+  let m = path.match(/^\/api\/studies\/(\w+)\/(\w+)\.bin$/);
+  if (m) return get(`demo/studies/${m[1]}/${m[2]}.bin`, true);
+  m = path.match(/^\/api\/studies\/(\w+)$/);
+  if (m) return get(`demo/studies/${m[1]}.json`);
+  throw new Error("Not available in the online demo.");
+}
+
+async function api(path, opts = {}) {
+  if (STATIC) return staticApi(path, opts);
+  const res = await fetch(path, { credentials: "same-origin", ...opts, headers: { ...(opts.body && !(opts.body instanceof FormData) ? { "Content-Type": "application/json" } : {}), ...(opts.headers || {}) } });
+  if (res.status === 401 && !path.startsWith("/api/login")) { showLogin(); throw new Error("Signed out"); }
+  if (!res.ok) { let m = res.statusText; try { m = (await res.json()).detail || m; } catch {} throw new Error(m); }
+  return path.endsWith(".bin") ? res.arrayBuffer() : res.json();
+}
+let toastT;
+function toast(m) { const t = $("toast"); t.textContent = m; t.style.opacity = 1; clearTimeout(toastT); toastT = setTimeout(() => (t.style.opacity = 0), 3200); }
+
+/* ---------------------------------------------------------------- auth */
+function showLogin() { $("login").hidden = false; $("app").hidden = true; disposeViewer(); }
+$("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault(); $("loginErr").textContent = "";
+  try { const u = await api("/api/login", { method: "POST", body: JSON.stringify({ email: $("email").value, password: $("password").value }) }); enter(u); }
+  catch (err) { $("loginErr").textContent = err.message; }
+});
+$("demoBtn").addEventListener("click", async () => { try { enter(await api("/api/login/demo", { method: "POST" })); } catch (err) { $("loginErr").textContent = err.message; } });
+$("logoutBtn").addEventListener("click", async () => { await api("/api/logout", { method: "POST" }); location.hash = ""; showLogin(); });
+
+if (STATIC) { $("newPatientBtn").hidden = true; $("loginForm").querySelector(".hint").textContent = "Online demo with two pre-processed BraTS cases. Uploading and running the AI on new scans works in the local version."; }
+let me = null;
+function enter(u) { me = u; $("login").hidden = true; $("app").hidden = false; $("who").textContent = u.name; refresh().then(route); }
+
+/* ---------------------------------------------------------------- data */
+let patients = [];
+async function refresh() { patients = await api("/api/patients"); renderPatients(); }
+function studyChip(s) {
+  if (s.status === "done") return s.summary?.detected ? `<span class="chip crit">Tumour detected</span>` : `<span class="chip ok">No tumour found</span>`;
+  if (s.status === "error") return `<span class="chip warn">Failed</span>`;
+  if (s.status === "processing") return `<span class="chip run">${esc(s.step)}</span>`;
+  return `<span class="chip idle">Queued</span>`;
+}
+function renderPatients() {
+  const q = $("psearch").value.trim().toLowerCase();
+  const cur = currentRoute();
+  $("plist").innerHTML = patients.filter((p) => !q || p.name.toLowerCase().includes(q) || (p.mrn || "").toLowerCase().includes(q)).map((p) => {
+    const s = p.studies[0];
+    const on = cur.pid === p.id || (cur.sid && p.studies.some((x) => x.id === cur.sid));
+    return `<div class="pitem ${on ? "on" : ""}" data-pid="${p.id}" tabindex="0"><div class="nm">${esc(p.name)}</div><div>${s ? studyChip(s) : ""}</div><div class="sub">${esc(p.mrn || "no ID")} · ${p.studies.length} stud${p.studies.length === 1 ? "y" : "ies"}</div></div>`;
+  }).join("") || `<p class="hint" style="padding:10px">No patients yet. Add one to upload an MRI.</p>`;
+}
+$("plist").addEventListener("click", (e) => { const it = e.target.closest("[data-pid]"); if (it) { location.hash = `#patient-${it.dataset.pid}`; $("app").classList.remove("showside"); } });
+$("plist").addEventListener("keydown", (e) => { if (e.key === "Enter") e.target.click(); });
+$("psearch").addEventListener("input", renderPatients);
+$("menuBtn").addEventListener("click", () => $("app").classList.toggle("showside"));
+if (matchMedia("(max-width: 760px)").matches) $("menuBtn").style.display = "";
+
+$("newPatientBtn").addEventListener("click", () => { $("pform").reset(); $("perr").textContent = ""; $("pdlg").showModal(); });
+$("pcancel").addEventListener("click", () => $("pdlg").close());
+$("pform").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    const p = await api("/api/patients", { method: "POST", body: JSON.stringify({ name: $("pname").value, mrn: $("pmrn").value, age: $("page").value ? +$("page").value : null, sex: $("psex").value, notes: $("pnotes").value }) });
+    $("pdlg").close(); await refresh(); location.hash = `#patient-${p.id}`; toast("Patient added");
+  } catch (err) { $("perr").textContent = err.message; }
+});
+
+/* ---------------------------------------------------------------- routing */
+function currentRoute() {
+  const h = location.hash.slice(1);
+  if (h.startsWith("patient-")) return { pid: h.slice(8) };
+  if (h.startsWith("study-")) return { sid: h.slice(6) };
+  return {};
+}
+let poll = null;
+async function route() {
+  clearInterval(poll); poll = null;
+  disposeViewer();
+  const r = currentRoute();
+  renderPatients();
+  if (r.sid) return openStudy(r.sid);
+  const p = patients.find((x) => x.id === r.pid) || patients[0];
+  if (!p) { $("main").innerHTML = `<div class="page"><h1 style="font-family:var(--f-display)">No patients yet</h1><p class="hint">Add a patient, then upload their four MRI sequences to run the segmentation.</p></div>`; $("crumbs").innerHTML = ""; return; }
+  if (!r.pid) { history.replaceState(null, "", `#patient-${p.id}`); renderPatients(); }
+  renderPatient(p);
+}
+addEventListener("hashchange", () => { if (me) route(); });
+
+/* ---------------------------------------------------------------- patient page */
+const STEPS = ["Loading MRI sequences", "Normalising intensities", "Running SegResNet", "Measuring the tumour", "Building 3D surfaces"];
+function stepsHtml(cur) {
+  const i = STEPS.indexOf(cur);
+  return `<div class="steps">${STEPS.map((s, j) => `<span class="${j < i ? "done" : j === i ? "on" : ""}">${j < i ? "✓" : j === i ? "●" : "○"} ${s}</span>`).join("")}</div>`;
+}
+let pending = {};
+function renderPatient(p) {
+  $("crumbs").innerHTML = `Patients / <b>${esc(p.name)}</b>`;
+  const busy = p.studies.some((s) => s.status === "queued" || s.status === "processing");
+  $("main").innerHTML = `<div class="page">
+    <div class="phead"><div class="eyebrow">Patient</div><h1>${esc(p.name)}</h1>
+      <div class="meta"><span>ID ${esc(p.mrn || "–")}</span><span>Age ${p.age ?? "–"}</span><span>Sex ${esc(p.sex || "–")}</span><span>Added ${new Date(p.created * 1000).toLocaleDateString()}</span></div>
+      ${p.notes ? `<p>${esc(p.notes)}</p>` : ""}</div>
+    <section><div class="sec-t">MRI studies</div><div class="studies">${p.studies.map((s) => `
+      <div class="scard">
+        <div><div class="t">${esc(s.label)}</div><div class="d">${new Date(s.created * 1000).toLocaleString()}</div>
+          ${s.status === "done" && s.summary ? `<div class="stats" style="margin-top:6px"><span>Whole tumour ${fmt(s.summary.whole)} mL</span>${s.summary.hemisphere ? `<span>${esc(s.summary.hemisphere)}</span>` : ""}${s.summary.lobe ? `<span>${esc(s.summary.lobe)} lobe</span>` : ""}</div>` : ""}
+          ${s.status === "processing" ? `<div style="margin-top:8px">${stepsHtml(s.step)}</div>` : ""}
+          ${s.status === "error" ? `<div class="err" style="margin-top:6px">${esc(s.step)}</div>` : ""}
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">${studyChip(s)}${s.status === "done" ? `<a class="btn primary small" href="#study-${s.id}">Open viewer</a>` : ""}</div>
+      </div>`).join("") || `<p class="hint">No MRI uploaded yet.</p>`}</div></section>
+    ${STATIC ? `<section class="upload"><div class="sec-t" style="margin:0">Upload MRI</div><p class="hint">This online demo shows two anonymised BraTS 2021 cases that were already segmented. Uploading new scans and running the AI needs the local version of Tumour Map (see the project README).</p></section></div>` : `
+    <section class="upload">
+      <div class="sec-t" style="margin:0">Upload MRI</div>
+      <p class="hint">Upload the four sequences as NIfTI files (.nii or .nii.gz): T1, T1 with contrast (T1ce), T2 and FLAIR. They must be skull-stripped and co-registered at 1 mm, as in the BraTS protocol. Drop all four at once and they are matched by filename.</p>
+      <div class="drop" id="drop" tabindex="0">Drop NIfTI files here, or click to choose<input type="file" id="files" multiple accept=".nii,.gz" hidden></div>
+      <div class="slots">${["t1", "t1ce", "t2", "flair"].map((k) => `<div class="slot ${pending[k] ? "filled" : ""}" data-k="${k}"><b>${SEQ_LABEL[k]}</b><span>${pending[k] ? esc(pending[k].name) : "not added"}</span></div>`).join("")}</div>
+      <div class="row">
+        <div><label class="l" for="slabel">Study description</label><input class="f" id="slabel" value="MRI brain with contrast"></div>
+        <button class="btn primary" id="runBtn" ${["t1", "t1ce", "t2", "flair"].every((k) => pending[k]) ? "" : "disabled"}>Run segmentation</button>
+      </div>
+      <div class="row" style="border-top:1px solid var(--line);padding-top:12px">
+        <div><label class="l" for="sample">No scans to hand? Load an anonymised BraTS case</label><select class="f" id="sample"></select></div>
+        <button class="btn" id="sampleBtn">Load sample case</button>
+      </div>
+    </section></div>`}`;
+  if (STATIC) return;
+  api("/api/samples").then((list) => { const s = $("sample"); if (s) s.innerHTML = list.map((c) => `<option>${c}</option>`).join(""); });
+  const drop = $("drop"), input = $("files");
+  drop.addEventListener("click", () => input.click());
+  drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") input.click(); });
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); addFiles(e.dataTransfer.files, p); });
+  input.addEventListener("change", () => addFiles(input.files, p));
+  $("runBtn").addEventListener("click", async () => {
+    const fd = new FormData();
+    for (const k of ["t1", "t1ce", "t2", "flair"]) fd.append(k, pending[k]);
+    fd.append("label", $("slabel").value || "MRI brain");
+    $("runBtn").disabled = true; $("runBtn").textContent = "Uploading…";
+    try { await api(`/api/patients/${p.id}/studies`, { method: "POST", body: fd }); pending = {}; toast("Uploaded. Segmentation queued."); await refresh(); route(); }
+    catch (err) { toast(err.message); $("runBtn").disabled = false; $("runBtn").textContent = "Run segmentation"; }
+  });
+  $("sampleBtn").addEventListener("click", async () => {
+    const fd = new FormData(); fd.append("case", $("sample").value);
+    await api(`/api/patients/${p.id}/studies/sample`, { method: "POST", body: fd }); toast("Sample case queued for segmentation"); await refresh(); route();
+  });
+  if (busy) poll = setInterval(async () => {
+    await refresh();
+    const np = patients.find((x) => x.id === p.id);
+    if (np && currentRoute().pid === p.id) {
+      const st = np.studies.some((s) => s.status === "queued" || s.status === "processing");
+      renderPatient(np);
+      if (!st) { clearInterval(poll); poll = null; toast("Segmentation finished"); }
+    }
+  }, 1500);
+}
+function addFiles(list, p) {
+  const unmatched = [];
+  for (const f of list) {
+    const n = f.name.toLowerCase();
+    const k = /t1ce|t1c|t1gd|t1_?contrast|t1post/.test(n) ? "t1ce" : /flair/.test(n) ? "flair" : /t2/.test(n) ? "t2" : /t1/.test(n) ? "t1" : null;
+    if (k) pending[k] = f; else unmatched.push(f.name);
+  }
+  if (unmatched.length) toast(`Could not tell the sequence for ${unmatched.join(", ")}. Include t1, t1ce, t2 or flair in the filename.`);
+  renderPatient(p);
+}
+
+/* ---------------------------------------------------------------- study viewer */
+let V = null; // active viewer state
+function disposeViewer() { if (!V) return; cancelAnimationFrame(V.raf); V.ro?.disconnect(); V.renderer.dispose(); V = null; }
+
+async function openStudy(sid) {
+  $("main").innerHTML = `<div class="loading">Loading study…</div>`;
+  const s = await api(`/api/studies/${sid}`);
+  $("crumbs").innerHTML = `Patients / <a href="#patient-${s.patient.id}" style="color:inherit">${esc(s.patient.name)}</a> / <b>${esc(s.label)}</b>`;
+  if (s.status !== "done") { location.hash = `#patient-${s.patient.id}`; return; }
+  const rep = s.report;
+  const hasTruth = !!rep.validation;
+  const names = ["t1", "t1ce", "t2", "flair", "labels", "meshes", ...(hasTruth ? ["truth"] : [])];
+  const bufs = await Promise.all(names.map((n) => api(`/api/studies/${sid}/${n}.bin`)));
+  const B = Object.fromEntries(names.map((n, i) => [n, bufs[i]]));
+  if (currentRoute().sid !== sid) return;
+  buildViewer(s, rep, B);
+}
+
+function buildViewer(s, rep, B) {
+  const [X, Y, Z] = rep.shape;
+  const vols = { t1: new Uint8Array(B.t1), t1ce: new Uint8Array(B.t1ce), t2: new Uint8Array(B.t2), flair: new Uint8Array(B.flair) };
+  const lab = new Uint8Array(B.labels);
+  const truth = B.truth ? new Uint8Array(B.truth) : null;
+  const at = (x, y, z) => x + y * X + z * X * Y;
+
+  $("main").innerHTML = `<div class="viewer">
+    <div class="stage">
+      <div class="toolbar">
+        <span class="muted" style="font-size:11px">Sequence</span>
+        <div class="seg" id="seqSeg">${Object.keys(SEQ_LABEL).map((k) => `<button data-v="${k}" aria-pressed="${k === "flair"}">${SEQ_LABEL[k]}</button>`).join("")}</div>
+        <label class="check"><input type="checkbox" id="ovAI" checked> AI segmentation</label>
+        ${truth ? `<label class="check"><input type="checkbox" id="ovGT"> Expert outline</label>` : ""}
+        <label class="check">Overlay <input type="range" id="ovA" min="0" max="100" value="45" style="width:80px;accent-color:var(--accent)"></label>
+      </div>
+      <div class="view3d" id="v3d">
+        <canvas id="c3d" aria-label="3D view of the brain and tumour. Drag to rotate, scroll to zoom, click to place the crosshair."></canvas>
+        <div class="layers"><h4>Layers</h4>
+          <label class="check"><input type="checkbox" data-layer="brain" checked> Brain surface</label>
+          <label class="check"><input type="checkbox" data-layer="oedema" checked> <span class="sw" style="background:var(--ed)"></span> Oedema</label>
+          <label class="check"><input type="checkbox" data-layer="necrotic" checked> <span class="sw" style="background:var(--ncr)"></span> Necrotic core</label>
+          <label class="check"><input type="checkbox" data-layer="enhancing" checked> <span class="sw" style="background:var(--et)"></span> Enhancing</label>
+          <label class="check"><input type="checkbox" data-layer="planes"> MRI planes</label>
+        </div>
+        <button class="btn small locate" id="locate">⌖ Go to tumour</button>
+        <div class="mapbtns"><button id="zin" aria-label="Zoom in">+</button><button id="zout" aria-label="Zoom out">−</button><button id="reset" aria-label="Reset view">⟲</button></div>
+        <div class="readout" id="readout"></div>
+      </div>
+      ${["ax", "cor", "sag"].map((k) => `<div class="slice" data-k="${k}"><canvas id="c_${k}"></canvas><div class="tag" id="t_${k}"></div>
+        ${k === "sag" ? `<div class="o l">A</div><div class="o r">P</div>` : `<div class="o l">R</div><div class="o r">L</div>`}
+        ${k === "ax" ? `<div class="o t">A</div><div class="o b">P</div>` : `<div class="o t">S</div><div class="o b">I</div>`}</div>`).join("")}
+    </div>
+    <div class="report" id="report">${reportHtml(s, rep)}</div>
+  </div>`;
+
+  const st = { seq: "flair", ai: true, gt: false, alpha: 0.45, cur: rep.focus_vox ? [...rep.focus_vox] : [X >> 1, Y >> 1, Z >> 1] };
+
+  /* ---- 2D slices: canvases are drawn in texture orientation (first axis right, second axis up) and mirrored by CSS for radiological display */
+  const views = {
+    ax: { w: X, h: Y, map: (u, v, c) => [u, v, c[2]], axis: 2, pick: (u, v) => [u, v, st.cur[2]] },
+    cor: { w: X, h: Z, map: (u, v, c) => [u, c[1], v], axis: 1, pick: (u, v) => [u, st.cur[1], v] },
+    sag: { w: Y, h: Z, map: (u, v, c) => [c[0], u, v], axis: 0, pick: (u, v) => [st.cur[0], u, v] },
+  };
+  for (const [k, v] of Object.entries(views)) {
+    v.canvas = $(`c_${k}`); v.canvas.width = v.w; v.canvas.height = v.h;
+    v.ctx = v.canvas.getContext("2d"); v.img = v.ctx.createImageData(v.w, v.h);
+  }
+  function drawSlice(k) {
+    const v = views[k], d = v.img.data, vol = vols[st.seq], c = st.cur;
+    for (let py = 0; py < v.h; py++) {
+      const vv = v.h - 1 - py;
+      for (let u = 0; u < v.w; u++) {
+        const [x, y, z] = v.map(u, vv, c);
+        const i = at(x, y, z), o = (py * v.w + u) * 4;
+        const g = vol[i];
+        let r = g, gg = g, b = g, a = g > 0 || lab[i] ? 255 : 0;
+        const L = st.ai ? lab[i] : 0;
+        if (L) { const rgb = REGION[L].rgb, al = st.alpha; r = r * (1 - al) + rgb[0] * al; gg = gg * (1 - al) + rgb[1] * al; b = b * (1 - al) + rgb[2] * al; a = 255; }
+        if (st.gt && truth && truth[i]) {
+          const [nx, ny, nz] = v.map(Math.min(u + 1, v.w - 1), vv, c), [mx, my, mz] = v.map(u, Math.min(vv + 1, v.h - 1), c);
+          if (!truth[at(nx, ny, nz)] || !truth[at(mx, my, mz)]) { r = 255; gg = 255; b = 255; a = 255; }
+        }
+        d[o] = r; d[o + 1] = gg; d[o + 2] = b; d[o + 3] = a;
+      }
+    }
+    v.ctx.putImageData(v.img, 0, 0);
+    // crosshair
+    const cu = k === "sag" ? c[1] : c[0], cv = k === "ax" ? c[1] : c[2];
+    v.ctx.strokeStyle = "rgba(232,166,138,0.75)"; v.ctx.lineWidth = 0.6;
+    v.ctx.beginPath(); v.ctx.moveTo(cu + 0.5, 0); v.ctx.lineTo(cu + 0.5, v.h); v.ctx.moveTo(0, v.h - 1 - cv + 0.5); v.ctx.lineTo(v.w, v.h - 1 - cv + 0.5); v.ctx.stroke();
+    $(`t_${k}`).textContent = `${{ ax: "Axial", cor: "Coronal", sag: "Sagittal" }[k]} ${c[v.axis] + 1}/${[X, Y, Z][v.axis]} · ${SEQ_LABEL[st.seq]}`;
+    if (v.tex) v.tex.needsUpdate = true;
+  }
+  const drawAll = () => { for (const k in views) drawSlice(k); place3D(); updateReadout(); };
+
+  function eventToVoxel(k, e) {
+    const v = views[k], r = v.canvas.getBoundingClientRect();
+    const s = Math.min(r.width / v.w, r.height / v.h), ox = (r.width - v.w * s) / 2, oy = (r.height - v.h * s) / 2;
+    let px = (e.clientX - r.left - ox) / s, py = (e.clientY - r.top - oy) / s;
+    px = v.w - px; // undo the CSS mirror
+    if (px < 0 || py < 0 || px >= v.w || py >= v.h) return null;
+    return v.pick(Math.floor(px), v.h - 1 - Math.floor(py));
+  }
+  for (const k in views) {
+    const cv = views[k].canvas; let dragging = false;
+    const setFrom = (e) => { const p = eventToVoxel(k, e); if (p) { st.cur = p; drawAll(); } };
+    cv.addEventListener("pointerdown", (e) => { dragging = true; cv.setPointerCapture(e.pointerId); setFrom(e); });
+    cv.addEventListener("pointermove", (e) => { if (dragging) setFrom(e); else { const p = eventToVoxel(k, e); if (p) updateReadout(p); } });
+    cv.addEventListener("pointerup", () => (dragging = false));
+    cv.addEventListener("wheel", (e) => { e.preventDefault(); const ax = views[k].axis, n = [X, Y, Z][ax]; st.cur[ax] = Math.max(0, Math.min(n - 1, st.cur[ax] + (e.deltaY > 0 ? -1 : 1))); drawAll(); }, { passive: false });
+  }
+  function updateReadout(p = st.cur) {
+    const i = at(...p), L = lab[i];
+    $("readout").innerHTML = `voxel <b>${p.map((x) => x + 1).join(", ")}</b> · ${SEQ_LABEL[st.seq]} <b>${vols[st.seq][i]}</b> · ${L ? `<b style="color:rgb(${REGION[L].rgb})">${REGION[L].name}</b>` : "no tumour label"}${truth ? ` · expert: ${truth[i] ? REGION[truth[i]]?.name || "label " + truth[i] : "none"}` : ""}`;
+  }
+  $("seqSeg").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; st.seq = b.dataset.v; $("seqSeg").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b)); drawAll(); });
+  $("ovAI").addEventListener("change", (e) => { st.ai = e.target.checked; drawAll(); });
+  $("ovGT")?.addEventListener("change", (e) => { st.gt = e.target.checked; drawAll(); });
+  $("ovA").addEventListener("input", (e) => { st.alpha = e.target.value / 100; drawAll(); });
+
+  /* ---- 3D map */
+  const canvas = $("c3d");
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  const scene = new THREE.Scene();
+  scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(renderer), 0.04).texture;
+  const camera = new THREE.PerspectiveCamera(32, 1, 1, 3000); scene.add(camera);
+  const key = new THREE.DirectionalLight(0xfff0e4, 1.8); key.position.set(-1, 1.2, 1); camera.add(key);
+  const rim = new THREE.DirectionalLight(0xbcd4ff, 1.0); rim.position.set(0.5, 0.6, -1); camera.add(rim);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 0.4));
+  const controls = new OrbitControls(camera, canvas); controls.enableDamping = true; controls.minDistance = 60; controls.maxDistance = 900;
+  const root = new THREE.Group(); root.rotation.x = -Math.PI / 2; scene.add(root);
+  const inner = new THREE.Group(); inner.position.set(-X / 2, -Y / 2, -Z / 2); root.add(inner);
+
+  const glass = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, side: THREE.FrontSide,
+    uniforms: { uCol: { value: new THREE.Color("#e8c4b6") } },
+    vertexShader: `varying vec3 vN; varying vec3 vV; void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vN = normalize(normalMatrix * normal); vV = -mv.xyz; gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform vec3 uCol; varying vec3 vN; varying vec3 vV; void main(){ float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.2); gl_FragColor = vec4(uCol * (0.35 + 0.9 * f), 0.05 + 0.55 * f); }`,
+  });
+  const mats = {
+    brain: glass,
+    oedema: new THREE.MeshPhysicalMaterial({ color: "#e9c46a", roughness: 0.4, clearcoat: 0.6, transparent: true, opacity: 0.38, depthWrite: false, side: THREE.DoubleSide }),
+    necrotic: new THREE.MeshPhysicalMaterial({ color: "#d1495b", roughness: 0.55, clearcoat: 0.3 }),
+    enhancing: new THREE.MeshPhysicalMaterial({ color: "#4fc3e0", roughness: 0.35, clearcoat: 0.6, emissive: "#0d3440" }),
+  };
+  const meshes = {};
+  let off = 0;
+  for (const m of rep.meshes) {
+    const pos = new Float32Array(B.meshes, off, m.nv * 3); off += m.nv * 12;
+    const idx = new Uint32Array(B.meshes, off, m.nf * 3); off += m.nf * 12;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3)); g.setIndex(new THREE.BufferAttribute(idx, 1)); g.computeVertexNormals();
+    const mesh = new THREE.Mesh(g, mats[m.name]);
+    mesh.renderOrder = m.name === "brain" ? 5 : m.name === "oedema" ? 4 : 1;
+    mesh.userData.layer = m.name;
+    inner.add(mesh); meshes[m.name] = mesh;
+  }
+  // MRI planes share the slice canvases as textures
+  const planes = new THREE.Group(); planes.visible = false; inner.add(planes);
+  for (const [k, v] of Object.entries(views)) {
+    v.tex = new THREE.CanvasTexture(v.canvas); v.tex.colorSpace = THREE.SRGBColorSpace; v.tex.minFilter = THREE.LinearFilter;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(v.w, v.h), new THREE.MeshBasicMaterial({ map: v.tex, transparent: true, alphaTest: 0.05, side: THREE.DoubleSide, toneMapped: false, opacity: 0.92 }));
+    if (k === "cor") mesh.rotation.x = Math.PI / 2;
+    if (k === "sag") mesh.setRotationFromMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(1, 0, 0)));
+    v.plane = mesh; planes.add(mesh);
+  }
+  const pin = new THREE.Mesh(new THREE.SphereGeometry(2.2, 20, 14), new THREE.MeshBasicMaterial({ color: "#e8a68a", depthTest: false }));
+  pin.renderOrder = 10; inner.add(pin);
+  function place3D() {
+    const [cx, cy, cz] = st.cur;
+    views.ax.plane.position.set((X - 1) / 2, (Y - 1) / 2, cz);
+    views.cor.plane.position.set((X - 1) / 2, cy, (Z - 1) / 2);
+    views.sag.plane.position.set(cx, (Y - 1) / 2, (Z - 1) / 2);
+    pin.position.set(cx, cy, cz);
+  }
+  $("v3d").querySelector(".layers").addEventListener("change", (e) => {
+    const l = e.target.dataset.layer; if (!l) return;
+    if (l === "planes") planes.visible = e.target.checked; else if (meshes[l]) meshes[l].visible = e.target.checked;
+  });
+
+  // camera helpers
+  let fly = null;
+  const homeDir = new THREE.Vector3(-0.75, 0.45, 0.55).normalize();
+  function view(dirWorld, dist, targetVox) {
+    const t = targetVox ? inner.localToWorld(new THREE.Vector3(...targetVox)) : new THREE.Vector3();
+    fly = { t0: performance.now(), fp: camera.position.clone(), ft: controls.target.clone(), tp: t.clone().addScaledVector(dirWorld, dist), tt: t };
+  }
+  function fitDist() { const v = THREE.MathUtils.degToRad(camera.fov) / 2, h = Math.atan(Math.tan(v) * camera.aspect); return Math.max(105 / Math.tan(v), 105 / Math.tan(h)); }
+  $("reset").addEventListener("click", () => view(homeDir, fitDist()));
+  $("zin").addEventListener("click", () => { const d = camera.position.clone().sub(controls.target); view(d.clone().normalize(), d.length() * 0.75, null); fly.tt = controls.target.clone(); fly.tp = controls.target.clone().add(d.multiplyScalar(0.75)); });
+  $("zout").addEventListener("click", () => { const d = camera.position.clone().sub(controls.target); view(d.clone().normalize(), d.length() * 1.3, null); fly.tt = controls.target.clone(); fly.tp = controls.target.clone().add(d.multiplyScalar(1.3)); });
+  $("locate").addEventListener("click", () => {
+    if (!rep.focus_vox) return toast("No tumour was detected in this study.");
+    st.cur = [...rep.focus_vox]; drawAll();
+    const c = new THREE.Vector3(...rep.focus_vox).sub(new THREE.Vector3(X / 2, Y / 2, Z / 2));
+    const dir = root.localToWorld(c.clone()).sub(root.position).normalize().add(new THREE.Vector3(0, 0.35, 0)).normalize();
+    view(dir, fitDist() * 0.7, rep.focus_vox);
+  });
+
+  // click in 3D moves the crosshair
+  const ray = new THREE.Raycaster(); let down = null;
+  canvas.addEventListener("pointerdown", (e) => (down = [e.clientX, e.clientY]));
+  canvas.addEventListener("pointerup", (e) => {
+    if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) return;
+    const r = canvas.getBoundingClientRect();
+    ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+    const targets = ["enhancing", "necrotic", "oedema", "brain"].map((k) => meshes[k]).filter((m) => m && m.visible);
+    const hit = ray.intersectObjects(targets, false)[0];
+    if (!hit) return;
+    const p = inner.worldToLocal(hit.point.clone());
+    st.cur = [Math.round(p.x), Math.round(p.y), Math.round(p.z)].map((v, i) => Math.max(0, Math.min([X, Y, Z][i] - 1, v)));
+    drawAll();
+  });
+
+  const resize = () => { const r = $("v3d").getBoundingClientRect(); renderer.setSize(r.width, r.height, false); camera.aspect = r.width / Math.max(1, r.height); camera.updateProjectionMatrix(); };
+  const ro = new ResizeObserver(resize); ro.observe($("v3d")); resize();
+  camera.position.copy(homeDir.clone().multiplyScalar(fitDist()));
+  function loop(now) {
+    if (fly) { const k = Math.min(1, (now - fly.t0) / 800), e = 1 - Math.pow(1 - k, 3); camera.position.lerpVectors(fly.fp, fly.tp, e); controls.target.lerpVectors(fly.ft, fly.tt, e); if (k >= 1) fly = null; }
+    controls.update(); renderer.render(scene, camera);
+    V.raf = requestAnimationFrame(loop);
+  }
+  V = { renderer, ro, raf: 0 };
+  drawAll();
+  V.raf = requestAnimationFrame(loop);
+}
+
+/* ---------------------------------------------------------------- report */
+function bars(list, unit = "%") { return `<div class="bars">${list.map((o) => `<div class="bar"><div class="lb"><i style="width:${Math.min(100, o.pct)}%"></i><span>${esc(o.name)}</span></div><div class="v">${fmt(o.pct)}${unit}</div></div>`).join("")}</div>`; }
+function reportHtml(s, r) {
+  const v = r.volumes_ml, c = r.composition || { enhancing: 0, necrotic: 0, oedema: 0 };
+  const prox = (r.proximity || []).map((p) => {
+    const cls = p.mm <= 0.5 ? ["crit", "Involved"] : p.mm < 10 ? ["warn", "Within 10 mm"] : ["ok", "Clear"];
+    return `<div><span>${esc(p.name)}</span><span class="chip ${cls[0]}">${cls[1]}</span><span class="mm">${p.mm <= 0.5 ? "0" : fmt(p.mm)} mm</span></div>`;
+  }).join("");
+  return `
+  <div><div class="eyebrow">${esc(s.patient.name)} · ${esc(s.label)}</div>
+    <h2 style="margin-top:4px">${r.detected ? `Tumour detected, ${esc((r.hemisphere || "").toLowerCase())}${r.lobes?.[0] ? ` ${esc(r.lobes[0].name.toLowerCase())}` : ""}` : "No tumour detected"}</h2>
+    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${r.detected ? `<span class="chip crit">${r.lesions} lesion${r.lesions === 1 ? "" : "s"}</span>` : `<span class="chip ok">Below 0.1 mL</span>`}<span class="chip idle">AI draft, needs radiologist review</span></div></div>
+  ${r.detected ? `
+  <dl class="kpis">
+    <div><dt>Whole tumour</dt><dd>${fmt(v.whole)} <small>mL</small></dd></div>
+    <div><dt>Tumour core</dt><dd>${fmt(v.core)} <small>mL</small></dd></div>
+    <div><dt><span class="sw" style="background:var(--et)"></span>Enhancing</dt><dd>${fmt(v.enhancing)} <small>mL</small></dd></div>
+    <div><dt><span class="sw" style="background:var(--ncr)"></span>Necrotic core</dt><dd>${fmt(v.necrotic)} <small>mL</small></dd></div>
+    <div><dt><span class="sw" style="background:var(--ed)"></span>Oedema</dt><dd>${fmt(v.oedema)} <small>mL</small></dd></div>
+    <div><dt>Max axial diameter</dt><dd>${fmt(r.diameters_mm.axial_max, 0)} × ${fmt(r.diameters_mm.axial_perp, 0)} <small>mm</small></dd></div>
+  </dl>
+  <div class="blk"><h4>Composition of the lesion</h4>
+    <div class="stack"><span style="width:${c.enhancing}%;background:var(--et)"></span><span style="width:${c.necrotic}%;background:var(--ncr)"></span><span style="width:${c.oedema}%;background:var(--ed)"></span></div>
+    <div class="legend"><span>enhancing ${fmt(c.enhancing)}%</span><span>necrotic ${fmt(c.necrotic)}%</span><span>oedema ${fmt(c.oedema)}%</span></div></div>
+  <div class="blk"><h4>Location</h4>
+    <dl class="dl"><dt>Hemisphere</dt><dd>${esc(r.hemisphere)}</dd><dt>Extent (R-L × A-P × S-I)</dt><dd>${r.extent_mm.join(" × ")} mm</dd><dt>Centre (approx. MNI)</dt><dd>${r.centroid_mni.map((x) => (x >= 0 ? "+" : "") + x.toFixed(0)).join(", ")}</dd><dt>Brain volume</dt><dd>${fmt(v.brain, 0)} mL</dd></dl></div>
+  ${r.lobes?.length ? `<div class="blk"><h4>Lobes involved</h4>${bars(r.lobes)}</div>` : ""}
+  ${r.gyri?.length ? `<div class="blk"><h4>Cortical regions touched</h4>${bars(r.gyri)}</div>` : ""}
+  ${r.deep?.length ? `<div class="blk"><h4>Deep structures</h4>${bars(r.deep)}</div>` : ""}
+  ${prox ? `<div class="blk"><h4>Distance from tumour core to critical areas</h4><div class="prox">${prox}</div></div>` : ""}` : ""}
+  ${r.validation ? `<div class="blk"><h4>Check against expert segmentation</h4><dl class="dl"><dt>Whole tumour Dice</dt><dd>${r.validation.whole.toFixed(3)}</dd><dt>Tumour core Dice</dt><dd>${r.validation.core.toFixed(3)}</dd><dt>Enhancing Dice</dt><dd>${r.validation.enhancing.toFixed(3)}</dd></dl><p class="note" style="margin-top:8px">Dice runs from 0 (no overlap) to 1 (identical). Turn on "Expert outline" above the slices to compare by eye.</p></div>` : ""}
+  <div class="blk"><h4>What the model identifies</h4><p class="note">It outlines three glioma sub-regions: enhancing tumour, necrotic or non-enhancing core, and surrounding oedema. It does not classify the tumour type or grade, and it was trained only on gliomas. Metastases, meningiomas and other lesions may be outlined imperfectly.</p></div>
+  <div class="blk"><h4>Model</h4><dl class="dl"><dt>Network</dt><dd>${esc(r.model.name)}</dd><dt>Training data</dt><dd>${esc(r.model.trained_on)}</dd><dt>Published Dice</dt><dd>WT ${r.model.reported_dice.whole} · TC ${r.model.reported_dice.core} · ET ${r.model.reported_dice.enhancing}</dd><dt>Processing time</dt><dd>${r.model.seconds} s on CPU</dd></dl></div>
+  <p class="note">Research prototype, not a medical device. Location is estimated by a linear alignment of the patient's brain to the FreeSurfer fsaverage template (MNI305) and is approximate. All findings need review by a radiologist.</p>`;
+}
+
+/* ---------------------------------------------------------------- boot */
+api("/api/me").then(enter).catch(() => showLogin());
+</script>
+</body>
+</html>

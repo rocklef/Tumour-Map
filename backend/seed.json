@@ -1,0 +1,27 @@
+{
+  "demo_user": {
+    "email": "doctor@tumourmap.local",
+    "name": "Dr. Demo",
+    "password": "TM-demo-7f3k29"
+  },
+  "demo_patients": [
+    {
+      "name": "Demo patient A",
+      "mrn": "BRATS-00014",
+      "age": null,
+      "sex": "",
+      "notes": "Anonymised BraTS 2021 training case 00014, includes expert segmentation for validation.",
+      "case": "BraTS2021_00014",
+      "study_label": "MRI brain, pre-operative (T1, T1ce, T2, FLAIR)"
+    },
+    {
+      "name": "Demo patient B",
+      "mrn": "BRATS-00012",
+      "age": null,
+      "sex": "",
+      "notes": "Anonymised BraTS 2021 training case 00012, includes expert segmentation for validation.",
+      "case": "BraTS2021_00012",
+      "study_label": "MRI brain, pre-operative (T1, T1ce, T2, FLAIR)"
+    }
+  ]
+}

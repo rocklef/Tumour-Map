@@ -1,0 +1,11 @@
+torch
+monai
+nibabel
+numpy
+scipy
+scikit-image
+trimesh
+fast_simplification
+fastapi
+uvicorn
+python-multipart
