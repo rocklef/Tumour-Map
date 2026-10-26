@@ -4,10 +4,10 @@ Local prototype: a doctor signs in, adds a patient, uploads a brain MRI and gets
 
 ## Run
 
-From the repository root:
+From the project folder:
 
 ```bash
-python tumour-map/backend/server.py
+python backend/server.py
 ```
 
 Then open http://localhost:8210 and choose **Continue with the demo account**. The demo login is defined in `backend/seed.json`.
