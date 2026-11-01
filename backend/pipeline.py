@@ -312,6 +312,12 @@ def run(study_dir: Path, files: dict, progress=lambda s: None):
         mbuf += v.tobytes() + f.tobytes()
     (study_dir / "meshes.bin").write_bytes(gzip.compress(bytes(mbuf), 6))
     report["meshes"] = mmeta
+
+    progress("Fitting Gaussians")
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import splat  # Part 2: mask-guided Gaussian fit, exported as .ply
+    report["splat"] = splat.run(study_dir, lab_r, to_u8(vols["t1ce"], brain), log=progress)
     report["model"] = {"name": "SegResNet (MONAI brats_mri_segmentation)", "trained_on": "BraTS 2018, 285 glioma cases",
                        "reported_dice": {"core": 0.856, "whole": 0.903, "enhancing": 0.791}, "seconds": round(time.time() - t0, 1)}
     (study_dir / "report.json").write_text(json.dumps(report, indent=1))

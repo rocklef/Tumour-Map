@@ -36,6 +36,8 @@ for p in sorted(db["patients"], key=lambda p: -p["created"]):
         out.mkdir()
         report = json.loads((src / "report.json").read_text())
         (SITE / "demo" / "studies" / f"{s['id']}.json").write_text(json.dumps({**s, "report": report, "patient": p}))
+        if (src / "splat.ply").exists():
+            shutil.copy(src / "splat.ply", out / "splat.ply")
         for f in src.glob("*.bin"):
             name = f.name.replace("vol_", "")
             shutil.copy(f, out / name)

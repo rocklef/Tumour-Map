@@ -113,13 +113,18 @@ main { grid-area: main; min-width: 0; min-height: 0; overflow: auto; }
 .mapbtns button { width: 34px; height: 34px; background: rgba(12, 16, 19, 0.88); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 16px; }
 .mapbtns button:hover { border-color: var(--accent); }
 .locate { position: absolute; right: 10px; top: 10px; }
+.hud { position: absolute; right: 10px; top: 46px; font-family: var(--f-mono); font-size: 10.5px; color: var(--muted); text-align: right; pointer-events: none; line-height: 1.5; }
+.hud b { color: var(--fg); font-weight: 500; }
+.modes { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); background: rgba(12, 16, 19, 0.88); z-index: 2; }
+.vlabel { position: absolute; bottom: 52px; font-family: var(--f-mono); font-size: 10.5px; color: var(--muted); pointer-events: none; text-align: center; transform: translateX(-50%); white-space: nowrap; }
+.vdiv { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--line); pointer-events: none; }
 .slice { position: relative; border-radius: 8px; overflow: hidden; background: #000; border: 1px solid var(--line); min-height: 0; }
 .slice canvas { width: 100%; height: 100%; object-fit: contain; display: block; transform: scaleX(-1); image-rendering: auto; cursor: crosshair; }
 .slice .tag { position: absolute; left: 8px; top: 6px; font-family: var(--f-mono); font-size: 10.5px; color: var(--muted); pointer-events: none; }
 .slice .o { position: absolute; font-family: var(--f-mono); font-size: 10.5px; color: #c9c4b8; pointer-events: none; }
 .slice .o.l { left: 6px; top: 50%; transform: translateY(-50%); } .slice .o.r { right: 6px; top: 50%; transform: translateY(-50%); }
 .slice .o.t { top: 6px; left: 50%; transform: translateX(-50%); } .slice .o.b { bottom: 6px; left: 50%; transform: translateX(-50%); }
-.readout { position: absolute; left: 10px; bottom: 10px; font-family: var(--f-mono); font-size: 11px; color: var(--muted); background: rgba(12, 16, 19, 0.8); padding: 4px 8px; border-radius: 5px; pointer-events: none; max-width: calc(100% - 70px); }
+.readout { margin-left: auto; font-family: var(--f-mono); font-size: 11px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .readout b { color: var(--fg); font-weight: 500; }
 
 .report { border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding: 16px 18px 30px; display: flex; flex-direction: column; gap: 18px; min-height: 0; }
@@ -143,6 +148,16 @@ main { grid-area: main; min-width: 0; min-height: 0; overflow: auto; }
 .prox { display: flex; flex-direction: column; gap: 4px; }
 .prox div { display: grid; grid-template-columns: minmax(0, 1fr) auto 70px; gap: 8px; align-items: center; font-size: 12px; }
 .prox .mm { font-family: var(--f-mono); font-size: 11px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.mt { width: 100%; border-collapse: collapse; font-family: var(--f-mono); font-size: 11px; font-variant-numeric: tabular-nums; }
+.mt th, .mt td { padding: 4px 6px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.mt th { color: var(--muted); font-weight: 500; }
+.mt td:first-child, .mt th:first-child { text-align: left; font-family: var(--f-body); }
+.prdlist { display: flex; flex-direction: column; }
+.prdrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+.prdrow .pp { font-family: var(--f-mono); font-size: 10px; color: var(--muted); margin-right: 4px; }
+.prdrow .pv { font-family: var(--f-mono); font-size: 11px; color: var(--muted); margin-top: 2px; }
+.prdrow .pv b { color: var(--fg); font-weight: 500; }
+.prdrow .pv small { color: var(--muted); }
 .note { font-size: 11.5px; color: var(--muted); border-left: 2px solid var(--line); padding-left: 10px; margin: 0; }
 .dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; font-size: 12px; margin: 0; }
 .dl dt { color: var(--muted); } .dl dd { margin: 0; font-family: var(--f-mono); font-size: 11.5px; }
@@ -337,9 +352,9 @@ async function route() {
 addEventListener("hashchange", () => { if (me) route(); });
 
 /* ---------------------------------------------------------------- patient page */
-const STEPS = ["Loading MRI sequences", "Normalising intensities", "Running SegResNet", "Measuring the tumour", "Building 3D surfaces"];
+const STEPS = ["Loading MRI sequences", "Normalising intensities", "Running SegResNet", "Measuring the tumour", "Building 3D surfaces", "Fitting Gaussians"];
 function stepsHtml(cur) {
-  const i = STEPS.indexOf(cur);
+  const i = STEPS.findIndex((s) => cur.startsWith(s));
   return `<div class="steps">${STEPS.map((s, j) => `<span class="${j < i ? "done" : j === i ? "on" : ""}">${j < i ? "✓" : j === i ? "●" : "○"} ${s}</span>`).join("")}</div>`;
 }
 let pending = {};
@@ -418,7 +433,7 @@ function addFiles(list, p) {
 
 /* ---------------------------------------------------------------- study viewer */
 let V = null; // active viewer state
-function disposeViewer() { if (!V) return; cancelAnimationFrame(V.raf); V.ro?.disconnect(); V.renderer.dispose(); V = null; }
+function disposeViewer() { if (!V) return; cancelAnimationFrame(V.raf); V.ro?.disconnect(); V.worker?.terminate(); V.renderer.dispose(); V = null; }
 
 async function openStudy(sid) {
   $("main").innerHTML = `<div class="loading">Loading study…</div>`;
@@ -427,7 +442,7 @@ async function openStudy(sid) {
   if (s.status !== "done") { location.hash = `#patient-${s.patient.id}`; return; }
   const rep = s.report;
   const hasTruth = !!rep.validation;
-  const names = ["t1", "t1ce", "t2", "flair", "labels", "meshes", ...(hasTruth ? ["truth"] : [])];
+  const names = ["t1", "t1ce", "t2", "flair", "labels", "meshes", ...(hasTruth ? ["truth"] : []), ...(rep.splat ? ["splat"] : [])];
   const bufs = await Promise.all(names.map((n) => api(`/api/studies/${sid}/${n}.bin`)));
   const B = Object.fromEntries(names.map((n, i) => [n, bufs[i]]));
   if (currentRoute().sid !== sid) return;
@@ -449,6 +464,7 @@ function buildViewer(s, rep, B) {
         <label class="check"><input type="checkbox" id="ovAI" checked> AI segmentation</label>
         ${truth ? `<label class="check"><input type="checkbox" id="ovGT"> Expert outline</label>` : ""}
         <label class="check">Overlay <input type="range" id="ovA" min="0" max="100" value="45" style="width:80px;accent-color:var(--accent)"></label>
+        <div class="readout" id="readout"></div>
       </div>
       <div class="view3d" id="v3d">
         <canvas id="c3d" aria-label="3D view of the brain and tumour. Drag to rotate, scroll to zoom, click to place the crosshair."></canvas>
@@ -458,10 +474,15 @@ function buildViewer(s, rep, B) {
           <label class="check"><input type="checkbox" data-layer="necrotic" checked> <span class="sw" style="background:var(--ncr)"></span> Necrotic core</label>
           <label class="check"><input type="checkbox" data-layer="enhancing" checked> <span class="sw" style="background:var(--et)"></span> Enhancing</label>
           <label class="check"><input type="checkbox" data-layer="planes"> MRI planes</label>
+          <label class="check" style="flex-direction:column;align-items:stretch;gap:2px;margin-top:4px">Brain opacity <input type="range" id="brainOp" min="0" max="100" value="45" style="accent-color:var(--accent)"></label>
+          ${B.splat ? `<label class="check" style="flex-direction:column;align-items:stretch;gap:2px">Splat opacity <input type="range" id="splatOp" min="5" max="100" value="85" style="accent-color:var(--accent)"></label>
+          <label class="check"><input type="checkbox" id="splatGrey"> Splats in MRI grey</label>` : ""}
         </div>
+        ${B.splat ? `<div class="seg modes" id="modeSeg"><button data-v="mesh" aria-pressed="false">Mesh</button><button data-v="splat" aria-pressed="false">Gaussian splats</button><button data-v="split" aria-pressed="true">Side by side</button></div>
+        <div class="vlabel" id="lblL"></div><div class="vlabel" id="lblR"></div><div class="vdiv" id="vdiv"></div>` : ""}
         <button class="btn small locate" id="locate">⌖ Go to tumour</button>
+        <div class="hud" id="hud"></div>
         <div class="mapbtns"><button id="zin" aria-label="Zoom in">+</button><button id="zout" aria-label="Zoom out">−</button><button id="reset" aria-label="Reset view">⟲</button></div>
-        <div class="readout" id="readout"></div>
       </div>
       ${["ax", "cor", "sag"].map((k) => `<div class="slice" data-k="${k}"><canvas id="c_${k}"></canvas><div class="tag" id="t_${k}"></div>
         ${k === "sag" ? `<div class="o l">A</div><div class="o r">P</div>` : `<div class="o l">R</div><div class="o r">L</div>`}
@@ -552,9 +573,9 @@ function buildViewer(s, rep, B) {
 
   const glass = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, side: THREE.FrontSide,
-    uniforms: { uCol: { value: new THREE.Color("#e8c4b6") } },
+    uniforms: { uCol: { value: new THREE.Color("#e8c4b6") }, uOp: { value: 1 } },
     vertexShader: `varying vec3 vN; varying vec3 vV; void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vN = normalize(normalMatrix * normal); vV = -mv.xyz; gl_Position = projectionMatrix * mv; }`,
-    fragmentShader: `uniform vec3 uCol; varying vec3 vN; varying vec3 vV; void main(){ float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.2); gl_FragColor = vec4(uCol * (0.35 + 0.9 * f), 0.05 + 0.55 * f); }`,
+    fragmentShader: `uniform vec3 uCol; uniform float uOp; varying vec3 vN; varying vec3 vV; void main(){ float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.2); gl_FragColor = vec4(uCol * (0.35 + 0.9 * f), (0.05 + 0.55 * f) * uOp); }`,
   });
   const mats = {
     brain: glass,
@@ -592,9 +613,162 @@ function buildViewer(s, rep, B) {
     views.sag.plane.position.set(cx, (Y - 1) / 2, (Z - 1) / 2);
     pin.position.set(cx, cy, cz);
   }
-  $("v3d").querySelector(".layers").addEventListener("change", (e) => {
+  /* ---- Part 2: Gaussian splats. Tumour Gaussians come from the fitted .ply; the brain context is a coarse
+     grid of isotropic Gaussians sampled from the T1 volume here in the browser (not fitted). */
+  const show = { brain: true, oedema: true, necrotic: true, enhancing: true };
+  let splat = null;
+  if (B.splat) {
+    const g = new Float32Array(B.splat), nT = g.length / 13;
+    const ctx = [];
+    for (let z = 2; z < Z; z += 4) for (let y = 2; y < Y; y += 4) for (let x = 2; x < X; x += 4) {
+      const i = at(x, y, z), v = vols.t1[i];
+      if (v > 25 && !lab[i]) ctx.push(x + (Math.random() - 0.5) * 3, y + (Math.random() - 0.5) * 3, z + (Math.random() - 0.5) * 3, v / 255);
+    }
+    const nB = ctx.length / 4, n = nT + nB;
+    const src = { center: new Float32Array(n * 3), cA: new Float32Array(n * 3), cB: new Float32Array(n * 3), rgba: new Float32Array(n * 4), label: new Float32Array(n) };
+    const tint = { 0: [0.86, 0.74, 0.69], 2: [0.91, 0.77, 0.42], 1: [0.82, 0.29, 0.36], 4: [0.31, 0.76, 0.88] };
+    const setCov = (k, sx, sy, sz, w, qx, qy, qz) => {
+      const R = [1 - 2 * (qy * qy + qz * qz), 2 * (qx * qy - w * qz), 2 * (qx * qz + w * qy), 2 * (qx * qy + w * qz), 1 - 2 * (qx * qx + qz * qz), 2 * (qy * qz - w * qx), 2 * (qx * qz - w * qy), 2 * (qy * qz + w * qx), 1 - 2 * (qx * qx + qy * qy)];
+      const s2 = [sx * sx, sy * sy, sz * sz];
+      const c = (r, q) => R[r * 3] * R[q * 3] * s2[0] + R[r * 3 + 1] * R[q * 3 + 1] * s2[1] + R[r * 3 + 2] * R[q * 3 + 2] * s2[2];
+      src.cA.set([c(0, 0), c(0, 1), c(0, 2)], k * 3); src.cB.set([c(1, 1), c(1, 2), c(2, 2)], k * 3);
+    };
+    for (let k = 0; k < nT; k++) {
+      const o = k * 13, L = g[o + 12] || 2, I = g[o + 11];
+      src.center.set([g[o], g[o + 1], g[o + 2]], k * 3);
+      setCov(k, g[o + 3], g[o + 4], g[o + 5], g[o + 6], g[o + 7], g[o + 8], g[o + 9]);
+      const t = tint[L] || tint[2];
+      src.rgba.set([t[0] * (0.45 + 0.75 * I), t[1] * (0.45 + 0.75 * I), t[2] * (0.45 + 0.75 * I), g[o + 10]], k * 4);
+      src.label[k] = L;
+    }
+    for (let j = 0; j < nB; j++) {
+      const k = nT + j, I = ctx[j * 4 + 3];
+      src.center.set([ctx[j * 4], ctx[j * 4 + 1], ctx[j * 4 + 2]], k * 3);
+      setCov(k, 2.3, 2.3, 2.3, 1, 0, 0, 0);
+      const t = tint[0];
+      src.rgba.set([t[0] * (0.25 + 0.9 * I), t[1] * (0.25 + 0.9 * I), t[2] * (0.25 + 0.9 * I), 0.016], k * 4);
+      src.label[k] = 0;
+    }
+    // All splat data lives in one float texture (4 texels per splat); each frame only the sorted
+    // index list is uploaded, and the depth sort runs in a worker so the main thread stays free.
+    const TW = 1024, rows = Math.ceil(n / TW);
+    const texData = new Float32Array(TW * 4 * rows * 4);
+    for (let k = 0; k < n; k++) {
+      const b = ((Math.floor(k / TW) * TW + (k % TW)) * 4) * 4;
+      texData.set([src.center[k * 3], src.center[k * 3 + 1], src.center[k * 3 + 2], src.label[k]], b);
+      texData.set([src.cA[k * 3], src.cA[k * 3 + 1], src.cA[k * 3 + 2], src.cB[k * 3]], b + 4);
+      texData.set([src.cB[k * 3 + 1], src.cB[k * 3 + 2], src.rgba[k * 4 + 3], 0], b + 8);
+      texData.set([src.rgba[k * 4], src.rgba[k * 4 + 1], src.rgba[k * 4 + 2], 0], b + 12);
+    }
+    const dataTex = new THREE.DataTexture(texData, TW * 4, rows, THREE.RGBAFormat, THREE.FloatType);
+    dataTex.minFilter = dataTex.magFilter = THREE.NearestFilter; dataTex.needsUpdate = true;
+    const geo = new THREE.InstancedBufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array([-3, -3, 0, 3, -3, 0, 3, 3, 0, -3, 3, 0]), 3));
+    geo.setIndex([0, 1, 2, 0, 2, 3]);
+    const idxAttr = new THREE.InstancedBufferAttribute(Float32Array.from({ length: n }, (_, i) => i), 1);
+    idxAttr.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute("splatIndex", idxAttr);
+    geo.instanceCount = n;
+    const mat = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3,
+      transparent: true, depthWrite: false, depthTest: true,
+      blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+      uniforms: { uData: { value: dataTex }, uFocal: { value: new THREE.Vector2() }, uViewport: { value: new THREE.Vector2() }, uShow: { value: new THREE.Vector4(1, 1, 1, 1) }, uOpac: { value: 0.85 }, uBrain: { value: 0.6 }, uGrey: { value: 0 } },
+      vertexShader: `
+        precision highp float; precision highp int; precision highp sampler2D;
+        in float splatIndex;
+        uniform sampler2D uData;
+        uniform vec2 uFocal; uniform vec2 uViewport; uniform vec4 uShow; uniform float uOpac; uniform float uBrain; uniform float uGrey;
+        out vec4 vCol; out vec2 vQ;
+        void main() {
+          int i = int(splatIndex + 0.5);
+          ivec2 base = ivec2((i % ${TW}) * 4, i / ${TW});
+          vec4 t0 = texelFetch(uData, base, 0), t1 = texelFetch(uData, base + ivec2(1, 0), 0);
+          vec4 t2 = texelFetch(uData, base + ivec2(2, 0), 0), t3 = texelFetch(uData, base + ivec2(3, 0), 0);
+          vec3 center = t0.xyz; float label = t0.w;
+          // per sub-region visibility weight: oedema is kept translucent so the core shows through
+          float vis = label < 0.5 ? uShow.x * uBrain * 2.0 : (label < 1.5 ? uShow.z : (label < 2.5 ? uShow.y * 0.07 : uShow.w));
+          vec4 cam = modelViewMatrix * vec4(center, 1.0);
+          vec4 clip = projectionMatrix * cam;
+          float z = -cam.z;
+          if (z < 0.5 || vis <= 0.0) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
+          mat3 V = mat3(t1.x, t1.y, t1.z, t1.y, t1.w, t2.x, t1.z, t2.x, t2.y);
+          // Jacobian of the perspective projection (EWA splatting), camera looks down -z
+          mat3 J = mat3(uFocal.x / z, 0.0, 0.0, 0.0, uFocal.y / z, 0.0, uFocal.x * cam.x / (z * z), uFocal.y * cam.y / (z * z), 0.0);
+          mat3 T = J * mat3(modelViewMatrix);
+          mat3 c2 = T * V * transpose(T);
+          float a = c2[0][0] + 0.3, b = c2[0][1], d = c2[1][1] + 0.3;
+          float mid = 0.5 * (a + d), r = length(vec2(0.5 * (a - d), b));
+          float l1 = mid + r, l2 = max(mid - r, 0.1);
+          vec2 e1 = abs(b) < 1e-6 ? (a >= d ? vec2(1.0, 0.0) : vec2(0.0, 1.0)) : normalize(vec2(b, l1 - a));
+          vec2 e2 = vec2(-e1.y, e1.x);
+          vec2 px = position.x * min(sqrt(l1), 512.0) * e1 + position.y * min(sqrt(l2), 512.0) * e2;
+          gl_Position = clip + vec4(px * 2.0 / uViewport * clip.w, 0.0, 0.0);
+          vQ = position.xy;
+          float lum = dot(t3.rgb, vec3(0.3, 0.59, 0.11));
+          vec3 col = label > 0.5 && uGrey > 0.5 ? vec3(lum * 1.1) : t3.rgb;
+          vCol = vec4(col, clamp(t2.z * (label > 0.5 ? uOpac : 1.0) * vis, 0.0, 0.99));
+        }`,
+      fragmentShader: `
+        precision highp float;
+        in vec4 vCol; in vec2 vQ;
+        layout(location = 0) out highp vec4 outColor;
+        void main() {
+          float r2 = dot(vQ, vQ);
+          if (r2 > 9.0) discard;
+          float al = vCol.a * exp(-0.5 * r2);
+          if (al < 0.004) discard;
+          outColor = vec4(vCol.rgb * al, al);
+        }`,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.frustumCulled = false; mesh.renderOrder = 20;
+    inner.add(mesh);
+    // back-to-front counting sort on view depth in a worker; re-run only when the camera has moved
+    const workerSrc = `let C = null, n = 0; const counts = new Uint32Array(65536);
+      onmessage = (e) => {
+        if (e.data.centers) { C = e.data.centers; n = C.length / 3; return; }
+        const [a, b, c, d] = e.data.view, t0 = performance.now();
+        const depth = new Int32Array(n); let lo = Infinity, hi = -Infinity; const z = new Float32Array(n);
+        for (let i = 0; i < n; i++) { const v = a * C[i * 3] + b * C[i * 3 + 1] + c * C[i * 3 + 2] + d; z[i] = v; if (v < lo) lo = v; if (v > hi) hi = v; }
+        const k = 65535 / Math.max(hi - lo, 1e-6); counts.fill(0);
+        for (let i = 0; i < n; i++) counts[(depth[i] = ((z[i] - lo) * k) | 0)]++;
+        for (let i = 1; i < 65536; i++) counts[i] += counts[i - 1];
+        const out = new Float32Array(n);
+        for (let i = n - 1; i >= 0; i--) out[--counts[depth[i]]] = i;
+        postMessage({ order: out, ms: performance.now() - t0 }, [out.buffer]);
+      };`;
+    const worker = new Worker(URL.createObjectURL(new Blob([workerSrc], { type: "text/javascript" })));
+    worker.postMessage({ centers: src.center.slice() });
+    const m = new THREE.Matrix4();
+    let busy = false, lastKey = "", sortMs = 0;
+    worker.onmessage = (e) => { idxAttr.array.set(e.data.order); idxAttr.needsUpdate = true; sortMs = e.data.ms; busy = false; };
+    function sort() {
+      m.multiplyMatrices(camera.matrixWorldInverse, mesh.matrixWorld);
+      const el = m.elements, key = [el[2], el[6], el[10], el[14]].map((v) => v.toFixed(3)).join(",");
+      if (busy || key === lastKey) return;
+      busy = true; lastKey = key;
+      worker.postMessage({ view: [el[2], el[6], el[10], el[14]] });
+    }
+    splat = { mesh, mat, sort, nT, nB, worker, stats: () => ({ sortMs }) };
+  }
+
+  const layersEl = $("v3d").querySelector(".layers");
+  layersEl.addEventListener("change", (e) => {
     const l = e.target.dataset.layer; if (!l) return;
-    if (l === "planes") planes.visible = e.target.checked; else if (meshes[l]) meshes[l].visible = e.target.checked;
+    if (l === "planes") planes.visible = e.target.checked;
+    else { show[l] = e.target.checked; if (meshes[l]) meshes[l].visible = e.target.checked; }
+    if (splat) splat.mat.uniforms.uShow.value.set(+show.brain, +show.oedema, +show.necrotic, +show.enhancing);
+  });
+  const setBrainOp = (v) => { glass.uniforms.uOp.value = v * 1.6; if (splat) splat.mat.uniforms.uBrain.value = v; };
+  $("brainOp").addEventListener("input", (e) => setBrainOp(e.target.value / 100));
+  setBrainOp(0.45);
+  $("splatOp")?.addEventListener("input", (e) => (splat.mat.uniforms.uOpac.value = e.target.value / 100));
+  $("splatGrey")?.addEventListener("change", (e) => (splat.mat.uniforms.uGrey.value = e.target.checked ? 1 : 0));
+  let mode = splat ? "split" : "mesh";
+  $("modeSeg")?.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    mode = b.dataset.v; $("modeSeg").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b)); resize();
   });
 
   // camera helpers
@@ -622,8 +796,10 @@ function buildViewer(s, rep, B) {
   canvas.addEventListener("pointerup", (e) => {
     if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) return;
     const r = canvas.getBoundingClientRect();
-    ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
-    const targets = ["enhancing", "necrotic", "oedema", "brain"].map((k) => meshes[k]).filter((m) => m && m.visible);
+    let x0 = 0, w = r.width;
+    if (mode === "split") { w = r.width / 2; if (e.clientX - r.left > w) x0 = w; }
+    ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left - x0) / w) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+    const targets = ["enhancing", "necrotic", "oedema", "brain"].map((k) => meshes[k]).filter((m) => m && show[k]);
     const hit = ray.intersectObjects(targets, false)[0];
     if (!hit) return;
     const p = inner.worldToLocal(hit.point.clone());
@@ -631,21 +807,128 @@ function buildViewer(s, rep, B) {
     drawAll();
   });
 
-  const resize = () => { const r = $("v3d").getBoundingClientRect(); renderer.setSize(r.width, r.height, false); camera.aspect = r.width / Math.max(1, r.height); camera.updateProjectionMatrix(); };
+  const size = { w: 1, h: 1 };
+  const resize = () => {
+    const r = $("v3d").getBoundingClientRect(); size.w = r.width; size.h = r.height;
+    renderer.setSize(r.width, r.height, false);
+    camera.aspect = (mode === "split" ? r.width / 2 : r.width) / Math.max(1, r.height); camera.updateProjectionMatrix();
+    if ($("lblL")) {
+      const sp = rep.splat;
+      $("vdiv").hidden = mode !== "split";
+      $("lblL").hidden = mode === "splat"; $("lblR").hidden = mode !== "split";
+      $("lblL").style.left = mode === "split" ? "25%" : "50%"; $("lblR").style.left = "75%";
+      $("lblL").textContent = "Mesh · marching cubes";
+      $("lblR").textContent = `Gaussian splats · ${sp.gaussians.toLocaleString()} tumour Gaussians`;
+      if (mode === "splat") { $("lblR").hidden = false; $("lblR").style.left = "50%"; }
+    }
+  };
   const ro = new ResizeObserver(resize); ro.observe($("v3d")); resize();
   camera.position.copy(homeDir.clone().multiplyScalar(fitDist()));
+  // frame timing for the HUD and the 360° orbit benchmark (PRD target: 60 FPS)
+  const perf = { dts: [], last: 0, hudT: 0, bench: null };
+  const median = (a) => { const b = [...a].sort((x, y) => x - y); return b.length ? b[b.length >> 1] : 0; };
+  function runBench() {
+    if (perf.bench) return;
+    const prev = mode;
+    if (splat) { mode = "splat"; $("modeSeg")?.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x.dataset.v === "splat")); resize(); }
+    fly = null; controls.enabled = false;
+    perf.bench = { t0: performance.now(), dur: 8000, pos0: camera.position.clone(), up: new THREE.Vector3(0, 1, 0), dts: [], prev: performance.now(), prevMode: prev };
+    $("benchBtn") && ($("benchBtn").disabled = true, $("benchBtn").textContent = "Orbiting 360°…");
+  }
+  function finishBench() {
+    const b = perf.bench; perf.bench = null; controls.enabled = true;
+    const dts = b.dts.slice(Math.floor(b.dts.length * 0.06));          // drop the warm-up frames
+    const secs = dts.reduce((a, x) => a + x, 0) / 1000;
+    if (dts.length < 20 || !secs) {
+      mode = b.prevMode; resize();
+      $("fpsCell").textContent = "Could not measure. Keep this tab visible and try again.";
+      $("benchBtn").disabled = false; $("benchBtn").textContent = "Run again";
+      return;
+    }
+    const fps = dts.length / secs, low = 1000 / [...dts].sort((x, y) => y - x)[Math.floor(dts.length * 0.01)];
+    const px = renderer.getDrawingBufferSize(new THREE.Vector2());
+    const res = { fps, low, frames: dts.length, splats: splat ? splat.nT + splat.nB : 0, w: px.x, h: px.y, mode: splat ? "Gaussian splats" : "Mesh" };
+    mode = b.prevMode; $("modeSeg")?.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x.dataset.v === mode)); resize();
+    const pass = fps >= 59;
+    $("fpsCell").innerHTML = `${fmt(fps, 0)} FPS</b> <small>(1% low ${fmt(low, 0)}, ${res.splats.toLocaleString()} splats, ${res.w}×${res.h} px)</small><b>`;
+    $("fpsChip").outerHTML = `<span class="chip ${pass ? "ok" : "warn"}" id="fpsChip">${pass ? "Met" : "Below"}</span>`;
+    $("benchBtn").disabled = false; $("benchBtn").textContent = "Run again";
+  }
   function loop(now) {
+    if (perf.last) { perf.dts.push(now - perf.last); if (perf.dts.length > 120) perf.dts.shift(); }
+    perf.last = now;
+    if (perf.bench) {
+      const b = perf.bench, t = (now - b.t0) / b.dur;
+      if (t >= 1) finishBench();
+      else { camera.position.copy(b.pos0.clone().sub(controls.target).applyAxisAngle(b.up, t * Math.PI * 2).add(controls.target)); b.dts.push(now - b.prev); b.prev = now; }
+    }
+    if (now - perf.hudT > 500) {
+      perf.hudT = now;
+      const ms = median(perf.dts), sp = splat && mode !== "mesh" ? splat.nT + splat.nB : 0;
+      $("hud").innerHTML = `<b>${ms ? fmt(1000 / ms, 0) : "–"} fps</b> · ${fmt(ms, 1)} ms${sp ? `<br>${sp.toLocaleString()} splats · sort ${fmt(splat.stats().sortMs, 1)} ms` : ""}`;
+    }
     if (fly) { const k = Math.min(1, (now - fly.t0) / 800), e = 1 - Math.pow(1 - k, 3); camera.position.lerpVectors(fly.fp, fly.tp, e); controls.target.lerpVectors(fly.ft, fly.tt, e); if (k >= 1) fly = null; }
-    controls.update(); renderer.render(scene, camera);
+    if (!perf.bench) controls.update(); else camera.lookAt(controls.target);
+    const tumourMeshes = ["oedema", "necrotic", "enhancing"];
+    const setMode = (m) => {
+      if (splat) splat.mesh.visible = m === "splat";
+      if (meshes.brain) meshes.brain.visible = m === "mesh" && show.brain;
+      for (const k of tumourMeshes) if (meshes[k]) meshes[k].visible = m === "mesh" && show[k];
+    };
+    const draw = (m, x, w) => {
+      setMode(m);
+      if (splat && m === "splat") {
+        const dpr = renderer.getPixelRatio(), vh = size.h * dpr, vw = w * dpr;
+        splat.mat.uniforms.uViewport.value.set(vw, vh);
+        const f = vh / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+        splat.mat.uniforms.uFocal.value.set(f, f);
+        camera.updateMatrixWorld(); splat.sort();
+      }
+      renderer.setViewport(x, 0, w, size.h); renderer.setScissor(x, 0, w, size.h);
+      renderer.render(scene, camera);
+    };
+    renderer.setScissorTest(true);
+    if (mode === "split") { renderer.autoClear = true; draw("mesh", 0, size.w / 2); draw("splat", size.w / 2, size.w / 2); }
+    else draw(mode, 0, size.w);
     V.raf = requestAnimationFrame(loop);
   }
-  V = { renderer, ro, raf: 0 };
+  V = { renderer, ro, raf: 0, worker: splat?.worker };
+  $("benchBtn")?.addEventListener("click", runBench);
   drawAll();
   V.raf = requestAnimationFrame(loop);
 }
 
 /* ---------------------------------------------------------------- report */
 function bars(list, unit = "%") { return `<div class="bars">${list.map((o) => `<div class="bar"><div class="lb"><i style="width:${Math.min(100, o.pct)}%"></i><span>${esc(o.name)}</span></div><div class="v">${fmt(o.pct)}${unit}</div></div>`).join("")}</div>`; }
+// BrainSplat-3D proposal targets, checked against this study
+function prdHtml(r) {
+  const val = r.validation?.whole, w = typeof val === "number" ? { dice: val } : val || {};
+  const chip = (ok, label) => `<span class="chip ${ok === null ? "idle" : ok ? "ok" : "warn"}">${label || (ok === null ? "n/a" : ok ? "Met" : "Below")}</span>`;
+  const row = (part, metric, target, measured, status) => `<div class="prdrow"><div><span class="pp">Part ${part}</span> ${metric}<div class="pv">target ${target} · <b>${measured}</b></div></div>${status}</div>`;
+  const sp = r.splat;
+  const rows = [
+    row("1", "Dice (whole tumour)", "≥ 90.0%", w.dice != null ? `${fmt(w.dice * 100)}%` : "–", chip(w.dice != null ? w.dice >= 0.9 : null)),
+    row("1", "IoU (whole tumour)", "≥ 81.5%", w.iou != null ? `${fmt(w.iou * 100)}%` : "–", chip(w.iou != null ? w.iou >= 0.815 : null)),
+    row("1", "HD95", "≤ 9.0 mm", w.hd95 != null ? `${fmt(w.hd95)} mm` : "–", chip(w.hd95 != null ? w.hd95 <= 9 : null)),
+    row("2", "Optimisation time", "< 2 min (A100)", sp ? `${sp.seconds} s (CPU)` : "–", chip(sp ? sp.seconds < 120 : null)),
+    row("2", ".ply size", "10–20 MB", sp ? `${sp.ply_mb} MB` : "–", sp ? chip(true, sp.ply_mb < 10 ? "Lighter" : "Met") : chip(null)),
+    row("3", "Frame rate", "≥ 60 FPS", `<span id="fpsCell">Not measured yet</span>`, `<span class="chip idle" id="fpsChip">Run test</span>`),
+    row("3", "Installation", "None", "Runs in the browser", chip(true)),
+  ].join("");
+  return `<div class="blk"><h4>Proposal targets (BrainSplat-3D)</h4><div class="prdlist">${rows}</div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap"><button class="btn small" id="benchBtn">Run 60 FPS test</button><span class="hint">Orbits the splat view 360° for 8 s and counts frames. The result is capped by your display's refresh rate.</span></div>
+    <p class="note" style="margin-top:8px">Part 1 numbers come from the SegResNet baseline compared with the expert outline. The proposal's CNN-Swin U-Net would replace it. Part 2 time is measured on this computer's CPU, while the target assumes an A100 GPU.</p></div>`;
+}
+// validation is either {region: dice} (older reports) or {region: {dice, iou, precision, recall, hd95}}
+function validationHtml(v) {
+  const rows = [["whole", "Whole tumour"], ["core", "Tumour core"], ["enhancing", "Enhancing"]].map(([k, name]) => {
+    const m = typeof v[k] === "number" ? { dice: v[k] } : v[k] || {};
+    const f = (x, d = 3) => (x == null ? "–" : x.toFixed(d));
+    return `<tr><td>${name}</td><td>${f(m.dice)}</td><td>${f(m.iou)}</td><td>${f(m.precision)}</td><td>${f(m.recall)}</td><td>${f(m.hd95, 1)}</td></tr>`;
+  }).join("");
+  return `<div class="blk"><h4>Check against expert segmentation</h4><div style="overflow-x:auto"><table class="mt"><thead><tr><th></th><th>Dice</th><th>IoU</th><th>Prec.</th><th>Recall</th><th>HD95 mm</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="note" style="margin-top:8px">Dice and IoU run from 0 (no overlap) to 1 (identical). HD95 is the 95th-percentile boundary distance; lower is better. Turn on "Expert outline" above the slices to compare by eye.</p></div>`;
+}
 function reportHtml(s, r) {
   const v = r.volumes_ml, c = r.composition || { enhancing: 0, necrotic: 0, oedema: 0 };
   const prox = (r.proximity || []).map((p) => {
@@ -674,9 +957,13 @@ function reportHtml(s, r) {
   ${r.gyri?.length ? `<div class="blk"><h4>Cortical regions touched</h4>${bars(r.gyri)}</div>` : ""}
   ${r.deep?.length ? `<div class="blk"><h4>Deep structures</h4>${bars(r.deep)}</div>` : ""}
   ${prox ? `<div class="blk"><h4>Distance from tumour core to critical areas</h4><div class="prox">${prox}</div></div>` : ""}` : ""}
-  ${r.validation ? `<div class="blk"><h4>Check against expert segmentation</h4><dl class="dl"><dt>Whole tumour Dice</dt><dd>${r.validation.whole.toFixed(3)}</dd><dt>Tumour core Dice</dt><dd>${r.validation.core.toFixed(3)}</dd><dt>Enhancing Dice</dt><dd>${r.validation.enhancing.toFixed(3)}</dd></dl><p class="note" style="margin-top:8px">Dice runs from 0 (no overlap) to 1 (identical). Turn on "Expert outline" above the slices to compare by eye.</p></div>` : ""}
+  ${prdHtml(r)}
+  ${r.validation ? validationHtml(r.validation) : ""}
+  ${r.splat ? `<div class="blk"><h4>3D Gaussian model (Part 2)</h4><dl class="dl"><dt>Tumour Gaussians</dt><dd>${r.splat.gaussians.toLocaleString()}</dd><dt>Dice, splat vs mask</dt><dd>${r.splat.dice_vs_mask.toFixed(4)}</dd><dt>Volume, mask / splat</dt><dd>${fmt(r.splat.volume_ml_mask, 2)} / ${fmt(r.splat.volume_ml_splat, 2)} mL</dd><dt>Intensity PSNR</dt><dd>${r.splat.intensity_psnr_db} dB</dd><dt>.ply size</dt><dd>${r.splat.ply_mb} MB</dd><dt>Fit time</dt><dd>${r.splat.seconds} s on CPU, ${r.splat.iterations} iterations</dd></dl>
+    <p class="note" style="margin-top:8px">Gaussians are placed inside the tumour mask and fitted directly to the MRI volume: occupancy to the mask and colour to T1ce intensity. No virtual camera views are needed because the MRI is already 3D. Reported volumes come from the mask.</p>
+    <p style="margin:8px 0 0"><a class="btn small" href="${STATIC ? `demo/studies/${s.id}/splat.ply` : `/api/studies/${s.id}/splat.ply`}" download="tumour_${s.id}.ply">Download .ply</a></p></div>` : ""}
   <div class="blk"><h4>What the model identifies</h4><p class="note">It outlines three glioma sub-regions: enhancing tumour, necrotic or non-enhancing core, and surrounding oedema. It does not classify the tumour type or grade, and it was trained only on gliomas. Metastases, meningiomas and other lesions may be outlined imperfectly.</p></div>
-  <div class="blk"><h4>Model</h4><dl class="dl"><dt>Network</dt><dd>${esc(r.model.name)}</dd><dt>Training data</dt><dd>${esc(r.model.trained_on)}</dd><dt>Published Dice</dt><dd>WT ${r.model.reported_dice.whole} · TC ${r.model.reported_dice.core} · ET ${r.model.reported_dice.enhancing}</dd><dt>Processing time</dt><dd>${r.model.seconds} s on CPU</dd></dl></div>
+  <div class="blk"><h4>Model</h4><dl class="dl"><dt>Network</dt><dd>${esc(r.model.name)}</dd><dt>Training data</dt><dd>${esc(r.model.trained_on)}</dd>${(() => { const d = r.model.reported_dice || r.model.reported?.dice; return d ? `<dt>Published Dice</dt><dd>WT ${d.whole} · TC ${d.core} · ET ${d.enhancing}</dd>` : ""; })()}<dt>Processing time</dt><dd>${r.model.seconds} s on CPU</dd></dl></div>
   <p class="note">Research prototype, not a medical device. Location is estimated by a linear alignment of the patient's brain to the FreeSurfer fsaverage template (MNI305) and is approximate. All findings need review by a radiologist.</p>`;
 }
 

@@ -25,6 +25,7 @@ Four NIfTI files per study: T1, T1 with contrast (T1ce), T2 and FLAIR. They must
 ## How it works
 
 - `backend/pipeline.py` runs the MONAI `brats_mri_segmentation` SegResNet (BraTS 2018), which outputs enhancing tumour, tumour core and whole tumour. It then measures volumes and diameters and estimates location against the FreeSurfer fsaverage atlas (MNI305).
+- `backend/splat.py` is Part 2 of the BrainSplat-3D proposal. It fits 3D Gaussians to the tumour: they are placed inside the mask and optimised directly against the MRI volume, with occupancy matched to the mask and colour to T1ce intensity. No virtual cameras are used because the MRI is already 3D. It exports a standard 3DGS `.ply` (SH degree 0) plus fit metrics: Dice against the mask, splat volume and intensity PSNR. Re-run it on a processed study with `python backend/splat.py data/studies/<id>`.
 - `backend/server.py` is a FastAPI app with login, patients, upload and a single-worker processing queue. Data is stored in `data/`, which is git-ignored.
 - `web/index.html` is the client: patient list, upload, a 3D view (Three.js) and axial, coronal and sagittal slices with overlays.
 

@@ -255,7 +255,7 @@ def study(sid: str, tm_session: str = Cookie(None)):
     return out
 
 
-BIN = {"t1", "t1ce", "t2", "flair", "labels", "truth", "meshes"}
+BIN = {"t1", "t1ce", "t2", "flair", "labels", "truth", "meshes", "splat"}
 
 
 @app.get("/api/studies/{sid}/{name}.bin")
@@ -267,6 +267,15 @@ def study_bin(sid: str, name: str, tm_session: str = Cookie(None)):
     if not f.exists():
         raise HTTPException(404)
     return FileResponse(f, media_type="application/octet-stream", headers={"Content-Encoding": "gzip", "Cache-Control": "private, max-age=3600"})
+
+
+@app.get("/api/studies/{sid}/splat.ply")
+def study_ply(sid: str, tm_session: str = Cookie(None)):
+    user_for(tm_session)
+    f = STUDIES / sid / "splat.ply"
+    if not all(c.isalnum() for c in sid) or not f.exists():
+        raise HTTPException(404, "No Gaussian model for this study.")
+    return FileResponse(f, media_type="application/octet-stream", filename=f"tumour_{sid}.ply")
 
 
 app.mount("/", StaticFiles(directory=ROOT / "web", html=True), name="web")
